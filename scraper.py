@@ -190,26 +190,6 @@ def estimate_liquidity(league):
     else:
         return 300000   # $300K default
 
-async def research_recent_draws():
-    """Return draw pattern research (could be enhanced with real historical data)"""
-    return [
-        {'type': 'lower_league_edge', 'count': 18, 'rate': 0.29, 'examples': 'Championship/League One', 'boost': 0.12},
-        {'type': 'scottish_stalemate', 'count': 11, 'rate': 0.27, 'examples': 'Scottish lower divisions', 'boost': 0.09},
-        {'type': 'portugal_parity', 'count': 9, 'rate': 0.265, 'examples': 'Primeira Liga mid-table', 'boost': 0.07},
-        {'type': 'netherlands_draws', 'count': 8, 'rate': 0.262, 'examples': 'Eredivisie even matches', 'boost': 0.06},
-        {'type': 'turkish_tie', 'count': 7, 'rate': 0.259, 'examples': 'Super Lig defensive games', 'boost': 0.05},
-        {'type': 'belgium_balance', 'count': 6, 'rate': 0.257, 'examples': 'Pro League mid-table', 'boost': 0.04},
-        {'type': 'sweden_standoff', 'count': 5, 'rate': 0.255, 'examples': 'Allsvenskan low scorers', 'boost': 0.04},
-        {'type': 'norway_neutral', 'count': 4, 'rate': 0.253, 'examples': 'Eliteserien parity', 'boost': 0.03},
-        {'type': 'denmark_draws', 'count': 4, 'rate': 0.251, 'examples': 'Superliga defensive', 'boost': 0.03},
-        {'type': 'referee_bias', 'count': 12, 'rate': 0.31, 'examples': 'Draw-prone refs', 'boost': 0.08},
-        {'type': 'mid_table_trap', 'count': 10, 'rate': 0.28, 'examples': '6th vs 8th clashes', 'boost': 0.06},
-        {'type': 'low_xG_teams', 'count': 9, 'rate': 0.27, 'examples': 'Under 1.2 xG teams', 'boost': 0.05},
-        {'type': 'friday_fatigue', 'count': 6, 'rate': 0.26, 'examples': 'Friday night games', 'boost': 0.04},
-        {'type': 'winter_draws', 'count': 5, 'rate': 0.25, 'examples': 'Dec/Jan cold weather', 'boost': 0.03},
-        {'type': 'derby_stalemate', 'count': 4, 'rate': 0.24, 'examples': 'Local derbies', 'boost': 0.03}
-    ]
-
 async def calculate_ev(match, pattern_boosts=0):
     """Calculate Expected Value for draw bet"""
     base_prob = 0.28 + pattern_boosts  # More conservative base
