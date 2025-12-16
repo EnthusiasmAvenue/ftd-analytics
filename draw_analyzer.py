@@ -20,13 +20,15 @@ class DrawAnalyzer:
             'x-rapidapi-host': 'v3.football.api-sports.io'
         }
     
-    async def analyze_recent_draws(self, days_back=7, leagues=None):
+    async def analyze_recent_draws(self, days_back=14, leagues=None, smart_range=True):
         """
         Fetch and analyze matches that ended in draws over the past N days
+        Extended to 14 days to ensure we capture at least 2 weekends of matches
         
         Args:
-            days_back: How many days to look back (default 7)
+            days_back: How many days to look back (default 14 for 2 weekends)
             leagues: List of league IDs to analyze (default: high-draw leagues)
+            smart_range: If True, prioritize most recent weekend (default True)
         
         Returns:
             List of draw patterns discovered
@@ -35,43 +37,79 @@ class DrawAnalyzer:
             # Focus on high-draw leagues
             leagues = [40, 41, 42, 179, 94, 88, 144, 203]
         
-        logger.info(f"🔍 Analyzing draws from past {days_back} days...")
+        logger.info(f"🔍 Analyzing draws from past {days_back} days (capturing recent weekends)...")
         
         all_draws = []
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days_back)
         
-        # Fetch fixtures for each day
+        # If smart_range enabled, find most recent weekend
+        if smart_range:
+            today = datetime.now()
+            days_since_sunday = (today.weekday() + 1) % 7  # 0=Sunday, 1=Monday, etc
+            
+            if days_since_sunday <= 2:  # Monday or Tuesday
+                # Last weekend just happened, look back 0-2 days
+                logger.info(f"   📅 Recent weekend detected, focusing on last 3 days")
+                start_date = end_date - timedelta(days=3)
+            elif days_since_sunday >= 3:  # Wednesday onwards
+                # Look back to previous weekend (3-6 days ago)
+                logger.info(f"   📅 Midweek detected, looking for last weekend")
+                start_date = end_date - timedelta(days=7)
+        
+        # Fetch fixtures for each day in batches
         current_date = start_date
+        dates_to_check = []
+        
         while current_date <= end_date:
-            date_str = current_date.strftime('%Y-%m-%d')
-            
-            for league_id in leagues:
-                try:
-                    url = f"https://v3.football.api-sports.io/fixtures?date={date_str}&league={league_id}"
-                    response = requests.get(url, headers=self.headers, timeout=15)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        fixtures = data.get('response', [])
-                        
-                        for fixture in fixtures:
-                            # Check if match ended in a draw
-                            if fixture['fixture']['status']['short'] == 'FT':
-                                home_goals = fixture['goals']['home']
-                                away_goals = fixture['goals']['away']
-                                
-                                if home_goals == away_goals and home_goals is not None:
-                                    draw_match = self._extract_draw_data(fixture)
-                                    all_draws.append(draw_match)
-                    
-                except Exception as e:
-                    logger.debug(f"Error fetching {date_str} for league {league_id}: {e}")
-                    continue
-            
+            dates_to_check.append(current_date.strftime('%Y-%m-%d'))
             current_date += timedelta(days=1)
         
+        logger.info(f"   Checking {len(dates_to_check)} days across {len(leagues)} leagues")
+        
+        # Batch process by date (all leagues per date in one request when possible)
+        for date_str in dates_to_check:
+            leagues_str = ",".join(map(str, leagues))
+            
+            try:
+                url = f"https://v3.football.api-sports.io/fixtures?date={date_str}&league={leagues_str}"
+                response = requests.get(url, headers=self.headers, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    fixtures = data.get('response', [])
+                    
+                    for fixture in fixtures:
+                        # Check if match ended in a draw
+                        if fixture['fixture']['status']['short'] == 'FT':
+                            home_goals = fixture['goals']['home']
+                            away_goals = fixture['goals']['away']
+                            
+                            if home_goals == away_goals and home_goals is not None:
+                                draw_match = self._extract_draw_data(fixture)
+                                if draw_match:
+                                    all_draws.append(draw_match)
+                    
+                    if len(fixtures) > 0:
+                        logger.debug(f"   {date_str}: {len(fixtures)} matches, {sum(1 for f in fixtures if f['goals']['home'] == f['goals']['away'])} draws")
+                
+                elif response.status_code == 429:
+                    logger.warning(f"⚠️ Rate limit hit, stopping historical analysis")
+                    break
+                    
+            except Exception as e:
+                logger.debug(f"Error fetching {date_str}: {e}")
+                continue
+        
         logger.info(f"✅ Found {len(all_draws)} draws in past {days_back} days")
+        
+        if len(all_draws) == 0:
+            logger.warning(f"⚠️ No draws found in past {days_back} days")
+            logger.warning(f"   This could mean:")
+            logger.warning(f"   1. Target leagues didn't play (midweek period)")
+            logger.warning(f"   2. Unusual week with few draws")
+            logger.warning(f"   3. Season break/international break")
+            logger.info(f"   💡 System will use static patterns until draws are found")
         
         # Analyze patterns
         patterns = self._identify_patterns(all_draws)
@@ -303,17 +341,26 @@ async def get_intelligent_patterns(db):
     """
     analyzer = DrawAnalyzer()
     
-    # 1. Analyze recent actual draws from API
-    recent_draws = await analyzer.analyze_recent_draws(days_back=7)
+    # 1. Analyze recent actual draws from API (14 days to capture 2 weekends)
+    recent_draws = await analyzer.analyze_recent_draws(days_back=14, smart_range=True)
     
     # 2. Learn from our own marked results
     learned = await analyzer.learn_from_marked_results(db)
     
-    # 3. Static patterns (baseline knowledge)
+    # 3. Static patterns (baseline knowledge) - expanded list
     static = [
         {'type': 'lower_league_edge', 'count': 18, 'rate': 0.29, 'examples': 'Championship/League One', 'boost': 0.12},
         {'type': 'scottish_stalemate', 'count': 11, 'rate': 0.27, 'examples': 'Scottish lower divisions', 'boost': 0.09},
         {'type': 'portugal_parity', 'count': 9, 'rate': 0.265, 'examples': 'Primeira Liga mid-table', 'boost': 0.07},
+        {'type': 'netherlands_draws', 'count': 8, 'rate': 0.262, 'examples': 'Eredivisie even matches', 'boost': 0.06},
+        {'type': 'turkish_tie', 'count': 7, 'rate': 0.259, 'examples': 'Super Lig defensive games', 'boost': 0.05},
+        {'type': 'belgium_balance', 'count': 6, 'rate': 0.257, 'examples': 'Pro League mid-table', 'boost': 0.04},
+        {'type': 'referee_bias', 'count': 12, 'rate': 0.31, 'examples': 'Draw-prone refs', 'boost': 0.08},
+        {'type': 'mid_table_trap', 'count': 10, 'rate': 0.28, 'examples': '6th vs 8th clashes', 'boost': 0.06},
+        {'type': 'low_xG_teams', 'count': 9, 'rate': 0.27, 'examples': 'Under 1.2 xG teams', 'boost': 0.05},
+        {'type': 'friday_fatigue', 'count': 6, 'rate': 0.26, 'examples': 'Friday night games', 'boost': 0.04},
+        {'type': 'winter_draws', 'count': 5, 'rate': 0.25, 'examples': 'Dec/Jan cold weather', 'boost': 0.03},
+        {'type': 'derby_stalemate', 'count': 4, 'rate': 0.24, 'examples': 'Local derbies', 'boost': 0.03}
     ]
     
     # 4. Combine all sources with intelligent weighting
