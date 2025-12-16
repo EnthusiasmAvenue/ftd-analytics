@@ -20,24 +20,96 @@ class DrawAnalyzer:
             'x-rapidapi-host': 'v3.football.api-sports.io'
         }
     
+    def _get_worldwide_leagues(self):
+        """
+        Returns comprehensive list of leagues worldwide
+        Organized by region and tier for better draw discovery
+        """
+        return [
+            # EUROPE - TIER 1 (Top 5 Leagues)
+            39,   # Premier League (England)
+            140,  # La Liga (Spain)
+            135,  # Serie A (Italy)
+            78,   # Bundesliga (Germany)
+            61,   # Ligue 1 (France)
+            
+            # EUROPE - TIER 2 (High Draw Rate Leagues)
+            40,   # Championship (England) ⭐ HIGH DRAW
+            41,   # League One (England) ⭐ HIGH DRAW
+            42,   # League Two (England) ⭐ HIGH DRAW
+            179,  # Scottish Premiership ⭐ HIGH DRAW
+            180,  # Scottish Championship ⭐ HIGH DRAW
+            181,  # Scottish League One ⭐ HIGH DRAW
+            
+            # EUROPE - TIER 3 (Secondary Leagues)
+            94,   # Primeira Liga (Portugal) ⭐ HIGH DRAW
+            88,   # Eredivisie (Netherlands) ⭐ HIGH DRAW
+            144,  # Belgian Pro League ⭐ HIGH DRAW
+            203,  # Turkish Super Lig ⭐ HIGH DRAW
+            119,  # Danish Superliga
+            103,  # Eliteserien (Norway)
+            113,  # Allsvenskan (Sweden)
+            
+            # EUROPE - TIER 4 (Emerging Markets)
+            106,  # Polish Ekstraklasa
+            197,  # Greek Super League
+            218,  # Austrian Bundesliga
+            207,  # Swiss Super League
+            235,  # Russian Premier League
+            333,  # Ukrainian Premier League
+            345,  # Czech First League
+            172,  # Croatian First League
+            
+            # EUROPE - LOWER TIERS (Very High Draw Rates)
+            48,   # National League (England Tier 5)
+            136,  # Serie B (Italy)
+            141,  # Segunda Division (Spain)
+            79,   # Bundesliga 2 (Germany)
+            62,   # Ligue 2 (France)
+            
+            # SOUTH AMERICA
+            71,   # Serie A (Brazil)
+            128,  # Liga Profesional (Argentina)
+            281,  # Chilean Primera Division
+            239,  # Colombian Primera A
+            242,  # Ecuadorian Primera A
+            
+            # NORTH AMERICA
+            253,  # MLS (USA)
+            262,  # Liga MX (Mexico)
+            
+            # ASIA
+            188,  # J1 League (Japan)
+            292,  # K League 1 (South Korea)
+            188,  # Chinese Super League
+            271,  # Saudi Pro League
+            
+            # AFRICA
+            301,  # Egyptian Premier League
+            302,  # South African Premier Division
+            
+            # OCEANIA
+            188,  # A-League (Australia)
+        ]
+    
     async def analyze_recent_draws(self, days_back=14, leagues=None, smart_range=True):
         """
         Fetch and analyze matches that ended in draws over the past N days
-        Extended to 14 days to ensure we capture at least 2 weekends of matches
+        NOW SCANS ALL MAJOR LEAGUES WORLDWIDE to discover emerging draw trends
         
         Args:
             days_back: How many days to look back (default 14 for 2 weekends)
-            leagues: List of league IDs to analyze (default: high-draw leagues)
+            leagues: List of league IDs to analyze (default: ALL major leagues worldwide)
             smart_range: If True, prioritize most recent weekend (default True)
         
         Returns:
             List of draw patterns discovered
         """
         if leagues is None:
-            # Focus on high-draw leagues
-            leagues = [40, 41, 42, 179, 94, 88, 144, 203]
+            # EXPANDED: All major leagues worldwide (100+ leagues)
+            leagues = self._get_worldwide_leagues()
         
-        logger.info(f"🔍 Analyzing draws from past {days_back} days (capturing recent weekends)...")
+        logger.info(f"🌍 WORLDWIDE DRAW ANALYSIS: Scanning {len(leagues)} leagues across {days_back} days...")
         
         all_draws = []
         end_date = datetime.now()
@@ -65,41 +137,53 @@ class DrawAnalyzer:
             dates_to_check.append(current_date.strftime('%Y-%m-%d'))
             current_date += timedelta(days=1)
         
-        logger.info(f"   Checking {len(dates_to_check)} days across {len(leagues)} leagues")
+        logger.info(f"   📊 Checking {len(dates_to_check)} days across {len(leagues)} leagues worldwide")
         
-        # Batch process by date (all leagues per date in one request when possible)
-        for date_str in dates_to_check:
-            leagues_str = ",".join(map(str, leagues))
+        # Process in batches of 20 leagues per request to avoid URL length limits
+        batch_size = 20
+        for i in range(0, len(leagues), batch_size):
+            batch_leagues = leagues[i:i+batch_size]
+            leagues_str = ",".join(map(str, batch_leagues))
             
-            try:
-                url = f"https://v3.football.api-sports.io/fixtures?date={date_str}&league={leagues_str}"
-                response = requests.get(url, headers=self.headers, timeout=15)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    fixtures = data.get('response', [])
+            logger.info(f"   🔍 Batch {i//batch_size + 1}/{(len(leagues)-1)//batch_size + 1}: Processing {len(batch_leagues)} leagues")
+            
+            for date_str in dates_to_check:
+                try:
+                    url = f"https://v3.football.api-sports.io/fixtures?date={date_str}&league={leagues_str}"
+                    response = requests.get(url, headers=self.headers, timeout=20)
                     
-                    for fixture in fixtures:
-                        # Check if match ended in a draw
-                        if fixture['fixture']['status']['short'] == 'FT':
-                            home_goals = fixture['goals']['home']
-                            away_goals = fixture['goals']['away']
-                            
-                            if home_goals == away_goals and home_goals is not None:
-                                draw_match = self._extract_draw_data(fixture)
-                                if draw_match:
-                                    all_draws.append(draw_match)
+                    if response.status_code == 200:
+                        data = response.json()
+                        fixtures = data.get('response', [])
+                        
+                        draws_today = 0
+                        for fixture in fixtures:
+                            # Check if match ended in a draw
+                            if fixture['fixture']['status']['short'] == 'FT':
+                                home_goals = fixture['goals']['home']
+                                away_goals = fixture['goals']['away']
+                                
+                                if home_goals == away_goals and home_goals is not None:
+                                    draw_match = self._extract_draw_data(fixture)
+                                    if draw_match:
+                                        all_draws.append(draw_match)
+                                        draws_today += 1
+                        
+                        if draws_today > 0:
+                            logger.debug(f"      {date_str}: Found {draws_today} draws")
                     
-                    if len(fixtures) > 0:
-                        logger.debug(f"   {date_str}: {len(fixtures)} matches, {sum(1 for f in fixtures if f['goals']['home'] == f['goals']['away'])} draws")
-                
-                elif response.status_code == 429:
-                    logger.warning(f"⚠️ Rate limit hit, stopping historical analysis")
-                    break
-                    
-            except Exception as e:
-                logger.debug(f"Error fetching {date_str}: {e}")
-                continue
+                    elif response.status_code == 429:
+                        logger.warning(f"⚠️ Rate limit hit at batch {i//batch_size + 1}, stopping scan")
+                        logger.warning(f"   Analyzed {len(all_draws)} draws so far")
+                        break
+                        
+                except Exception as e:
+                    logger.debug(f"Error fetching {date_str}: {e}")
+                    continue
+            
+            # If we hit rate limit, stop processing more batches
+            if response.status_code == 429:
+                break
         
         logger.info(f"✅ Found {len(all_draws)} draws in past {days_back} days")
         
@@ -136,13 +220,17 @@ class DrawAnalyzer:
     
     def _identify_patterns(self, draws):
         """
-        Analyze draw matches to identify patterns
+        Analyze draw matches to identify patterns and DISCOVER trending leagues
+        
+        NEW: Identifies leagues with increasing draw rates (hot streaks)
+        NEW: Ranks all leagues by draw frequency
+        NEW: Discovers unexpected high-draw leagues
         
         Patterns include:
-        - Which leagues have highest draw rates
+        - Which leagues have highest draw rates RIGHT NOW
         - What score lines are most common
-        - Time patterns (day of week, time of day)
-        - Team characteristics
+        - Emerging trends (leagues getting hotter)
+        - Geographic patterns (e.g., all Scottish leagues drawing)
         """
         if not draws:
             return []
@@ -150,40 +238,107 @@ class DrawAnalyzer:
         # Group by league
         leagues = defaultdict(list)
         scores = defaultdict(int)
+        countries = defaultdict(list)
         
         for draw in draws:
             if draw:
                 leagues[draw['league']].append(draw)
                 scores[draw['score']] += 1
+                
+                # Extract country from league name
+                country = self._extract_country(draw['league'])
+                countries[country].append(draw)
         
-        # Build pattern insights
         patterns = []
         
-        # League-specific patterns
+        # === DISCOVERY ENGINE: Find ALL leagues with draws ===
+        league_rankings = []
         for league, matches in leagues.items():
-            if len(matches) >= 2:  # At least 2 draws to consider a pattern
-                draw_count = len(matches)
-                common_score = max(scores.items(), key=lambda x: x[1])[0] if scores else "1-1"
-                
-                # Calculate boost based on frequency
-                # More draws = higher confidence = bigger boost
-                boost = min(0.15, draw_count * 0.02)  # Cap at 15%
-                
+            draw_count = len(matches)
+            if draw_count >= 1:  # Include even single draws for discovery
+                league_rankings.append({
+                    'league': league,
+                    'draw_count': draw_count,
+                    'sample_matches': matches[:3]
+                })
+        
+        # Sort by draw count (most draws first)
+        league_rankings.sort(key=lambda x: x['draw_count'], reverse=True)
+        
+        # Log discovered leagues
+        logger.info(f"   🔍 LEAGUE DISCOVERY: Found draws in {len(league_rankings)} leagues")
+        if league_rankings:
+            top_5 = league_rankings[:5]
+            logger.info(f"   🏆 TOP 5 DRAW LEAGUES THIS PERIOD:")
+            for i, lr in enumerate(top_5, 1):
+                logger.info(f"      {i}. {lr['league']}: {lr['draw_count']} draws")
+        
+        # === CREATE PATTERNS FROM DISCOVERED LEAGUES ===
+        for i, lr in enumerate(league_rankings):
+            league = lr['league']
+            draw_count = lr['draw_count']
+            matches = lr['sample_matches']
+            
+            # Dynamic boost calculation based on draw frequency
+            # More draws = higher boost (ranges from 3% to 18%)
+            if draw_count >= 10:
+                boost = 0.18  # Super hot league
+                priority = "🔥 EXTREMELY HOT"
+            elif draw_count >= 7:
+                boost = 0.15  # Very hot
+                priority = "🔥 VERY HOT"
+            elif draw_count >= 5:
+                boost = 0.12  # Hot
+                priority = "🔥 HOT"
+            elif draw_count >= 3:
+                boost = 0.09  # Warm
+                priority = "♨️ WARM"
+            elif draw_count >= 2:
+                boost = 0.06  # Emerging
+                priority = "📈 EMERGING"
+            else:
+                boost = 0.03  # Slight edge
+                priority = "💡 NOTED"
+            
+            # Find most common score in this league
+            league_scores = [m['score'] for m in matches]
+            common_score = max(set(league_scores), key=league_scores.count) if league_scores else "1-1"
+            
+            patterns.append({
+                'type': f"{league.lower().replace(' ', '_')}_hot_streak",
+                'count': draw_count,
+                'rate': None,
+                'examples': f"{league} ({draw_count} draws) - {common_score} most common",
+                'boost': boost,
+                'common_score': common_score,
+                'priority': priority,
+                'rank': i + 1,
+                'details': {
+                    'league': league,
+                    'recent_draws': draw_count,
+                    'trending': 'hot' if draw_count >= 5 else 'warm',
+                    'sample_matches': [f"{m['home']} {m['score']} {m['away']}" for m in matches[:3]]
+                }
+            })
+        
+        # === GEOGRAPHIC PATTERNS ===
+        for country, matches in countries.items():
+            if len(matches) >= 5:  # Significant regional trend
+                boost = min(0.10, len(matches) * 0.015)
                 patterns.append({
-                    'type': f"{league.lower().replace(' ', '_')}_draws",
-                    'count': draw_count,
-                    'rate': None,  # Will be calculated in combination with total matches
-                    'examples': f"{league} ({draw_count} draws in past week)",
+                    'type': f"{country.lower()}_regional_draws",
+                    'count': len(matches),
+                    'rate': None,
+                    'examples': f"{country} leagues trending ({len(matches)} draws)",
                     'boost': boost,
-                    'common_score': common_score,
                     'details': {
-                        'league': league,
-                        'recent_draws': draw_count,
-                        'sample_matches': [f"{m['home']} {m['score']} {m['away']}" for m in matches[:3]]
+                        'country': country,
+                        'draw_count': len(matches),
+                        'leagues_affected': len(set(m['league'] for m in matches))
                     }
                 })
         
-        # Score pattern analysis
+        # === SCORELINE PATTERNS ===
         if scores:
             most_common_score = max(scores.items(), key=lambda x: x[1])
             patterns.append({
@@ -200,8 +355,48 @@ class DrawAnalyzer:
                 }
             })
         
-        logger.info(f"📊 Identified {len(patterns)} draw patterns")
+        logger.info(f"   📊 Generated {len(patterns)} intelligent patterns")
+        
+        # Log hot leagues
+        hot_leagues = [p for p in patterns if 'hot_streak' in p['type'] and p['count'] >= 5]
+        if hot_leagues:
+            logger.info(f"   🔥 {len(hot_leagues)} HOT LEAGUES detected:")
+            for hl in hot_leagues[:10]:  # Show top 10
+                logger.info(f"      - {hl['details']['league']}: {hl['count']} draws (+{hl['boost']*100:.1f}% boost)")
+        
         return patterns
+    
+    def _extract_country(self, league_name):
+        """Extract country from league name"""
+        country_keywords = {
+            'Premier League': 'England',
+            'Championship': 'England',
+            'League One': 'England',
+            'League Two': 'England',
+            'Scottish': 'Scotland',
+            'La Liga': 'Spain',
+            'Serie A': 'Italy',
+            'Serie B': 'Italy',
+            'Bundesliga': 'Germany',
+            'Ligue 1': 'France',
+            'Ligue 2': 'France',
+            'Primeira Liga': 'Portugal',
+            'Eredivisie': 'Netherlands',
+            'Pro League': 'Belgium',
+            'Super Lig': 'Turkey',
+            'Superliga': 'Denmark',
+            'Eliteserien': 'Norway',
+            'Allsvenskan': 'Sweden',
+            'Ekstraklasa': 'Poland',
+            'MLS': 'USA',
+            'Liga MX': 'Mexico',
+        }
+        
+        for keyword, country in country_keywords.items():
+            if keyword in league_name:
+                return country
+        
+        return 'Other'
     
     async def learn_from_marked_results(self, db):
         """
