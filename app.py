@@ -55,14 +55,31 @@ async def run_initial_analysis():
         analysis_running = False
 
 async def run_daily_analysis():
-    """Background task that runs analysis every 4 hours"""
+    """Smart scheduling: Only analyze on match days to save API calls"""
     await asyncio.sleep(60)  # Wait 1 min after startup
     
     while True:
         try:
-            await perform_analysis()
-            logger.info("⏰ Next analysis in 4 hours")
-            await asyncio.sleep(14400)  # 4 hours
+            now = datetime.now()
+            day_of_week = now.strftime('%A')
+            
+            # Smart match day detection
+            if day_of_week in ['Friday', 'Saturday', 'Sunday']:
+                logger.info(f"🎯 {day_of_week} - Peak match day, running analysis")
+                await perform_analysis()
+                sleep_hours = 4  # Frequent updates on match days
+            elif day_of_week in ['Tuesday', 'Wednesday']:
+                logger.info(f"📊 {day_of_week} - Midweek fixtures possible, running analysis")
+                await perform_analysis()
+                sleep_hours = 6  # Less frequent midweek
+            else:
+                logger.info(f"⏸️ {day_of_week} - Quiet day (no typical matches), skipping analysis")
+                logger.info(f"   Most leagues play Fri-Sun. Next check in 12 hours.")
+                sleep_hours = 12  # Long wait on empty days
+            
+            logger.info(f"⏰ Next analysis in {sleep_hours} hours")
+            await asyncio.sleep(sleep_hours * 3600)
+            
         except Exception as e:
             logger.error(f"❌ Analysis loop error: {e}")
             await asyncio.sleep(3600)  # Retry in 1 hour on error
