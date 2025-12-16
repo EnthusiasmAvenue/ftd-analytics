@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: ftd-analytics
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: RAPIDAPI_KEY
+        sync: false  # Set this manually in Render dashboard
+      - key: DATABASE_PATH
+        value: /tmp/ftd.db
+    healthCheckPath: /health
