@@ -5,7 +5,8 @@ import uvicorn
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from db import FTDDatabase
-from scraper import scrape_todays_fixtures, research_recent_draws, calculate_ev
+from scraper import scrape_todays_fixtures, calculate_ev
+from draw_analyzer import get_intelligent_patterns
 import os
 import logging
 
@@ -15,9 +16,6 @@ logger = logging.getLogger(__name__)
 # Use persistent storage path or fallback
 db_path = os.getenv("DATABASE_PATH", "ftd.db")
 db = FTDDatabase(db_path=db_path)
-
-# Track if analysis is running
-analysis_running = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,7 +36,11 @@ async def lifespan(app: FastAPI):
     
     logger.info("👋 Shutting down")
 
+# Create FastAPI app instance - MUST be named 'app' for Render
 app = FastAPI(lifespan=lifespan)
+
+# Track if analysis is running
+analysis_running = False
 
 async def run_initial_analysis():
     """Run analysis immediately on startup"""
@@ -72,12 +74,11 @@ async def perform_analysis():
     logger.info(f"🔥 Starting analysis for {today} ({day_of_week})")
     
     try:
-        # Step 1: Research draw patterns
-        logger.info("📊 Researching draw patterns...")
-        draw_patterns = await research_recent_draws()
-        await db.save_draw_patterns(draw_patterns)
-        total_boost = sum(p.get('boost', 0) for p in draw_patterns) / max(1, len(draw_patterns))
-        logger.info(f"✅ Pattern boost: +{total_boost:.1%}")
+        # Step 1: Get intelligent patterns (combines recent draws + learned patterns + static)
+        logger.info("🧠 Gathering intelligent patterns...")
+        patterns, total_boost = await get_intelligent_patterns(db)
+        await db.save_draw_patterns(patterns)
+        logger.info(f"✅ Intelligence boost: +{total_boost:.1%} (from {len(patterns)} patterns)")
         
         # Step 2: Scrape today's fixtures
         logger.info("🔍 Scraping today's fixtures...")
