@@ -450,6 +450,37 @@ async def health():
     """Health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
+@app.get("/hot-leagues")
+async def get_hot_leagues():
+    """Get current hot leagues (high draw rate trends)"""
+    try:
+        async with db.get_connection() as conn:
+            cursor = await conn.execute('''
+                SELECT pattern_type, frequency, example_matches, model_boost
+                FROM draw_patterns
+                WHERE pattern_type LIKE '%hot_streak%'
+                ORDER BY frequency DESC
+                LIMIT 10
+            ''')
+            patterns = await cursor.fetchall()
+            
+            hot_leagues = []
+            for pattern in patterns:
+                pattern_type, frequency, examples, boost = pattern
+                # Extract league name from pattern_type
+                league_name = pattern_type.replace('_hot_streak', '').replace('_', ' ').title()
+                hot_leagues.append({
+                    'league': league_name,
+                    'draws': frequency,
+                    'boost': f"+{boost*100:.1f}%",
+                    'example': examples
+                })
+            
+            return {"hot_leagues": hot_leagues, "count": len(hot_leagues)}
+    except Exception as e:
+        logger.error(f"Error fetching hot leagues: {e}")
+        return {"hot_leagues": [], "count": 0}
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
