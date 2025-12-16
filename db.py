@@ -167,3 +167,7 @@ class FTDDatabase:
     async def kelly_stake(self, bankroll, odds, prob):
         kelly_fraction = (prob * odds - 1) / (odds - 1)
         return max(0, min(bankroll * kelly_fraction * 0.25, bankroll * 0.05))
+    
+    def get_connection(self):
+        """Context manager for database connections"""
+        return aiosqlite.connect(self.db_path)
